@@ -1,4 +1,374 @@
-// 画像を canvas に contain で描画するヘルパー
+const FOLDER_STORAGE_KEY = "dropbox_completed_folders";
+const IMAGE_STORAGE_KEY = "dropbox_completed_images";
+
+let stream = null;
+let currentOpacity = 0.5;
+let overlays = [{ name: "なし", src: "", path: "" }];
+let folderList = [];
+
+const video = document.getElementById("camera");
+const overlay = document.getElementById("overlay");
+const canvas = document.getElementById("canvas");
+const folderSelect = document.getElementById("folderSelect");
+const overlaySelect = document.getElementById("overlaySelect");
+const folderCompleteCheck = document.getElementById("folderCompleteCheck");
+const imageCompleteCheck = document.getElementById("imageCompleteCheck");
+const statusEl = document.getElementById("status");
+
+function loadList(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveList(key, list) {
+  localStorage.setItem(key, JSON.stringify(list));
+}
+
+function isFolderCompleted(path) {
+  return loadList(FOLDER_STORAGE_KEY).indexOf(path) !== -1;
+}
+
+function isImageCompleted(path) {
+  if (!path) return false;
+  return loadList(IMAGE_STORAGE_KEY).indexOf(path) !== -1;
+}
+
+async function dropboxApi(endpoint, body) {
+  const res = await fetch("https://api.dropboxapi.com/2/" + endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + ACCESS_TOKEN,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(JSON.stringify(data, null, 2));
+  }
+  return data;
+}
+
+async function listAllEntries(path, recursive) {
+  let entries = [];
+  let data = await dropboxApi("files/list_folder", {
+    path: path,
+    recursive: !!recursive
+  });
+  entries = entries.concat(data.entries || []);
+
+  while (data.has_more) {
+    data = await dropboxApi("files/list_folder/continue", {
+      cursor: data.cursor
+    });
+    entries = entries.concat(data.entries || []);
+  }
+  return entries;
+}
+
+function getDepth(path) {
+  const root = FOLDER_PATH.replace(/\/$/, "").toLowerCase();
+  let rel = path.toLowerCase();
+  if (rel.indexOf(root) === 0) {
+    rel = rel.slice(root.length);
+  }
+  rel = rel.replace(/^\//, "");
+  if (!rel) return 0;
+  return rel.split("/").filter(Boolean).length;
+}
+
+function toggleFolderComplete() {
+  const path = folderSelect.value;
+  if (!path) return;
+
+  let list = loadList(FOLDER_STORAGE_KEY);
+  if (folderCompleteCheck.checked) {
+    if (list.indexOf(path) === -1) list.push(path);
+  } else {
+    list = list.filter(function(p) { return p !== path; });
+  }
+  saveList(FOLDER_STORAGE_KEY, list);
+  renderFolderSelect(path);
+  statusEl.textContent = folderCompleteCheck.checked
+    ? "フォルダを完了済みにしました"
+    : "フォルダの完了を解除しました";
+}
+
+function toggleImageComplete() {
+  const index = parseInt(overlaySelect.value);
+  if (isNaN(index) || !overlays[index] || !overlays[index].path) {
+    imageCompleteCheck.checked = false;
+    return;
+  }
+
+  const path = overlays[index].path;
+  let list = loadList(IMAGE_STORAGE_KEY);
+
+  if (imageCompleteCheck.checked) {
+    if (list.indexOf(path) === -1) list.push(path);
+  } else {
+    list = list.filter(function(p) { return p !== path; });
+  }
+
+  saveList(IMAGE_STORAGE_KEY, list);
+  renderOverlaySelect(index);
+  statusEl.textContent = imageCompleteCheck.checked
+    ? "画像を完了済みにしました: " + overlays[index].name
+    : "画像の完了を解除しました: " + overlays[index].name;
+}
+
+function renderFolderSelect(selectedPath) {
+  folderSelect.innerHTML = "";
+  folderList.forEach(function(folder) {
+    const option = document.createElement("option");
+    option.value = folder.path;
+    const indent = "　".repeat(folder.depth);
+    const mark = isFolderCompleted(folder.path) ? "✅ " : "📁 ";
+    option.textContent = indent + mark + folder.name;
+    folderSelect.appendChild(option);
+  });
+  if (selectedPath) folderSelect.value = selectedPath;
+  folderCompleteCheck.checked = selectedPath ? isFolderCompleted(selectedPath) : false;
+}
+
+function renderOverlaySelect(selectedIndex) {
+  overlaySelect.innerHTML = "";
+  for (let i = 0; i < overlays.length; i++) {
+    const item = overlays[i];
+    const option = document.createElement("option");
+    option.value = i;
+    if (!item.path) {
+      option.textContent = item.name;
+    } else {
+      const mark = isImageCompleted(item.path) ? "✅ " : "🖼️ ";
+      option.textContent = mark + item.name;
+    }
+    overlaySelect.appendChild(option);
+  }
+  if (typeof selectedIndex === "number" && !isNaN(selectedIndex)) {
+    overlaySelect.value = String(selectedIndex);
+  }
+  syncImageCompleteCheck();
+}
+
+function syncImageCompleteCheck() {
+  const index = parseInt(overlaySelect.value);
+  if (isNaN(index) || !overlays[index] || !overlays[index].path) {
+    imageCompleteCheck.checked = false;
+    imageCompleteCheck.disabled = true;
+    return;
+  }
+  imageCompleteCheck.disabled = false;
+  imageCompleteCheck.checked = isImageCompleted(overlays[index].path);
+}
+
+function initOverlaySelect() {
+  renderOverlaySelect(0);
+}
+
+async function initDropbox() {
+  statusEl.textContent = "フォルダツリーを読み込み中...";
+  folderSelect.innerHTML = "";
+  overlaySelect.innerHTML = '<option value="">フォルダを選択</option>';
+  overlays = [{ name: "なし", src: "", path: "" }];
+  overlay.style.display = "none";
+  folderList = [];
+  imageCompleteCheck.checked = false;
+  imageCompleteCheck.disabled = true;
+
+  try {
+    const entries = await listAllEntries(FOLDER_PATH, true);
+    const folders = entries.filter(function(e) {
+      return e[".tag"] === "folder";
+    });
+    folders.sort(function(a, b) {
+      return a.path_lower.localeCompare(b.path_lower);
+    });
+
+    folderList.push({
+      path: FOLDER_PATH,
+      name: "（ルート）",
+      depth: 0
+    });
+
+    folders.forEach(function(folder) {
+      folderList.push({
+        path: folder.path_lower,
+        name: folder.name,
+        depth: getDepth(folder.path_lower)
+      });
+    });
+
+    renderFolderSelect(FOLDER_PATH);
+    statusEl.textContent = "フォルダ " + folderList.length + " 個を読み込みました";
+    await loadImagesFromPath(FOLDER_PATH);
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "エラー: " + err.message;
+    alert("フォルダの読み込みに失敗しました\n\n" + err.message);
+  }
+}
+
+async function onFolderChange() {
+  const path = folderSelect.value;
+  if (!path) return;
+  folderCompleteCheck.checked = isFolderCompleted(path);
+  await loadImagesFromPath(path);
+}
+
+// 画像読み込みを並列化
+async function loadImagesFromPath(path) {
+  statusEl.textContent = "画像を読み込み中... " + path;
+  overlays = [{ name: "なし", src: "", path: "" }];
+  overlay.style.display = "none";
+  imageCompleteCheck.checked = false;
+  imageCompleteCheck.disabled = true;
+
+  try {
+    const entries = await listAllEntries(path, false);
+    const imageFiles = entries.filter(function(entry) {
+      return entry[".tag"] === "file" &&
+             /\.(png|jpe?g|gif|webp)$/i.test(entry.name);
+    });
+
+    if (imageFiles.length === 0) {
+      statusEl.textContent = "このフォルダに画像がありません";
+      initOverlaySelect();
+      return;
+    }
+
+    const linkPromises = imageFiles.map(async function(file) {
+      try {
+        const linkData = await dropboxApi("files/get_temporary_link", {
+          path: file.path_lower
+        });
+        if (linkData.link) {
+          return {
+            name: file.name,
+            src: linkData.link,
+            path: file.path_lower
+          };
+        }
+      } catch (e) {
+        console.warn("リンク取得失敗:", file.name, e);
+      }
+      return null;
+    });
+
+    const results = await Promise.all(linkPromises);
+    results.forEach(function(item) {
+      if (item) overlays.push(item);
+    });
+
+    statusEl.textContent = "成功！ " + (overlays.length - 1) + " 枚の画像を読み込みました";
+    initOverlaySelect();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "エラー: " + err.message;
+    alert("画像の読み込みに失敗しました\n\n" + err.message);
+  }
+}
+
+// カメラ解像度最適化（高解像度優先でフォールバック）
+async function startCamera() {
+  try {
+    if (stream) {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+    }
+
+    const constraintsList = [
+      {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      },
+      {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      },
+      {
+        video: {
+          facingMode: { ideal: "environment" }
+        }
+      },
+      {
+        video: true
+      }
+    ];
+
+    let lastError = null;
+    stream = null;
+
+    for (let i = 0; i < constraintsList.length; i++) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
+        break;
+      } catch (e) {
+        lastError = e;
+        console.warn("カメラ制約失敗、次を試します:", constraintsList[i], e);
+      }
+    }
+
+    if (!stream) {
+      throw lastError || new Error("カメラを取得できませんでした");
+    }
+
+    video.srcObject = stream;
+
+    video.onloadedmetadata = function() {
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      const w = settings.width || video.videoWidth || 0;
+      const h = settings.height || video.videoHeight || 0;
+      console.log("カメラ設定:", settings);
+
+      const prevStatus = statusEl.textContent;
+      statusEl.textContent = "カメラ解像度: " + w + "×" + h;
+      setTimeout(function() {
+        if (statusEl.textContent.indexOf("カメラ解像度") === 0) {
+          statusEl.textContent = prevStatus;
+        }
+      }, 3000);
+    };
+  } catch (e) {
+    alert("カメラを起動できませんでした\n\n" + (e.message || e));
+    console.error(e);
+    statusEl.textContent = "カメラエラー: " + (e.message || e);
+  }
+}
+
+function changeOverlay() {
+  const index = parseInt(overlaySelect.value);
+  if (isNaN(index) || !overlays[index]) return;
+
+  const selected = overlays[index];
+  syncImageCompleteCheck();
+
+  if (selected.src) {
+    overlay.crossOrigin = "anonymous";
+    overlay.src = selected.src;
+    overlay.style.display = "block";
+    updateOpacity(document.getElementById("opacitySlider").value);
+  } else {
+    overlay.style.display = "none";
+  }
+}
+
+function updateOpacity(value) {
+  currentOpacity = value / 100;
+  overlay.style.opacity = currentOpacity;
+  document.getElementById("opacityValue").textContent = value + "%";
+}
+
+// 画像を canvas に contain で描画（非16:9対応）
 function drawImageContain(ctx, img, canvasWidth, canvasHeight) {
   if (!img.naturalWidth || !img.naturalHeight) return;
 
@@ -8,13 +378,11 @@ function drawImageContain(ctx, img, canvasWidth, canvasHeight) {
   let drawWidth, drawHeight, offsetX, offsetY;
 
   if (imgRatio > canvasRatio) {
-    // 画像の方が横長 → 幅に合わせる
     drawWidth = canvasWidth;
     drawHeight = canvasWidth / imgRatio;
     offsetX = 0;
     offsetY = (canvasHeight - drawHeight) / 2;
   } else {
-    // 画像の方が縦長 → 高さに合わせる
     drawHeight = canvasHeight;
     drawWidth = canvasHeight * imgRatio;
     offsetX = (canvasWidth - drawWidth) / 2;
@@ -34,7 +402,7 @@ function shoot() {
   canvas.height = video.videoHeight || 720;
   const ctx = canvas.getContext("2d");
 
-  // カメラ映像は全面に描画（cover相当）
+  // カメラ映像は全面描画
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   // オーバーレイは contain で中央配置
@@ -69,3 +437,14 @@ function shoot() {
     }
   }, 1000);
 }
+
+window.addEventListener("orientationchange", function() {
+  setTimeout(function() {
+    window.scrollTo(0, 0);
+  }, 100);
+});
+
+window.onload = function() {
+  startCamera();
+  initDropbox();
+};
