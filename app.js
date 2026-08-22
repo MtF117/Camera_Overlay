@@ -1,8 +1,3 @@
-// ★★★ ここだけ書き換えてください ★★★
-const ACCESS_TOKEN = "ここにアクセストークンを貼る";
-const FOLDER_PATH = "/Overlays";
-// ★★★★★★★★★★★★★★★★★★★★★★
-
 const FOLDER_STORAGE_KEY = "dropbox_completed_folders";
 const IMAGE_STORAGE_KEY = "dropbox_completed_images";
 
@@ -75,9 +70,9 @@ async function listAllEntries(path, recursive) {
 }
 
 function getDepth(path) {
-  const root = FOLDER_PATH.replace(/\/$/, "").toLowerCase();
+  const root = (FOLDER_PATH || "").replace(/\/$/, "").toLowerCase();
   let rel = path.toLowerCase();
-  if (rel.indexOf(root) === 0) {
+  if (root && rel.indexOf(root) === 0) {
     rel = rel.slice(root.length);
   }
   rel = rel.replace(/^\//, "");
@@ -212,19 +207,23 @@ async function initDropbox() {
     await loadImagesFromPath(FOLDER_PATH);
   } catch (err) {
     console.error(err);
-    statusEl.textContent = "エラー: " + err.message;
-    alert("フォルダの読み込みに失敗しました\n\n" + err.message);
+    let msg = err.message || String(err);
+    if (msg.includes("path/not_found")) {
+      msg = "フォルダが見つかりません。\nconfig の FOLDER_PATH を確認してください。\nApp folder の場合は \"\"（空文字）にしてください。";
+    }
+    statusEl.textContent = "エラー: " + msg;
+    alert("フォルダの読み込みに失敗しました\n\n" + msg);
   }
 }
 
 async function onFolderChange() {
   const path = folderSelect.value;
-  if (!path) return;
+  if (!path && path !== "") return;
   folderCompleteCheck.checked = isFolderCompleted(path);
   await loadImagesFromPath(path);
 }
 
-// 画像読み込みを並列化
+// 画像読み込みを並列化 + 最初の画像を自動表示
 async function loadImagesFromPath(path) {
   statusEl.textContent = "画像を読み込み中... " + path;
   overlays = [{ name: "なし", src: "", path: "" }];
@@ -269,7 +268,14 @@ async function loadImagesFromPath(path) {
     });
 
     statusEl.textContent = "成功！ " + (overlays.length - 1) + " 枚の画像を読み込みました";
-    initOverlaySelect();
+
+    // ★ 最初の画像を自動選択して表示
+    if (overlays.length > 1) {
+      renderOverlaySelect(1);
+      changeOverlay();
+    } else {
+      initOverlaySelect();
+    }
   } catch (err) {
     console.error(err);
     statusEl.textContent = "エラー: " + err.message;
@@ -277,48 +283,35 @@ async function loadImagesFromPath(path) {
   }
 }
 
-// カメラ解像度最適化（高解像度優先でフォールバック）
+// ★ カメラ起動（安定重視版）
 async function startCamera() {
   try {
-    if (stream) {
-      stream.getTracks().forEach(function(t) { t.stop(); });
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("このブラウザはカメラに対応していません");
     }
 
+    if (stream) {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      stream = null;
+    }
+
+    statusEl.textContent = "カメラ起動中...";
+
+    // 安定しやすい順に試す
     const constraintsList = [
-      {
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
-      },
-      {
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      },
-      {
-        video: {
-          facingMode: { ideal: "environment" }
-        }
-      },
-      {
-        video: true
-      }
+      { video: { facingMode: "environment" } },
+      { video: { facingMode: { ideal: "environment" } } },
+      { video: true }
     ];
 
     let lastError = null;
-    stream = null;
-
     for (let i = 0; i < constraintsList.length; i++) {
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
         break;
       } catch (e) {
         lastError = e;
-        console.warn("カメラ制約失敗、次を試します:", constraintsList[i], e);
+        console.warn("カメラ制約失敗:", e.name, e.message);
       }
     }
 
@@ -327,26 +320,36 @@ async function startCamera() {
     }
 
     video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.style.display = "block";
 
-    video.onloadedmetadata = function() {
-      const track = stream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      const w = settings.width || video.videoWidth || 0;
-      const h = settings.height || video.videoHeight || 0;
-      console.log("カメラ設定:", settings);
+    // ★ これが無いとスマホで黒画面になりやすい
+    await video.play();
 
-      const prevStatus = statusEl.textContent;
-      statusEl.textContent = "カメラ解像度: " + w + "×" + h;
-      setTimeout(function() {
-        if (statusEl.textContent.indexOf("カメラ解像度") === 0) {
-          statusEl.textContent = prevStatus;
-        }
-      }, 3000);
-    };
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    const w = settings.width || video.videoWidth || "?";
+    const h = settings.height || video.videoHeight || "?";
+    statusEl.textContent = "カメラ起動成功 (" + w + "×" + h + ")";
+    console.log("カメラ成功:", settings);
+
   } catch (e) {
-    alert("カメラを起動できませんでした\n\n" + (e.message || e));
-    console.error(e);
-    statusEl.textContent = "カメラエラー: " + (e.message || e);
+    console.error("カメラエラー:", e);
+    let msg = e.message || e.name || String(e);
+
+    if (e.name === "NotAllowedError") {
+      msg = "カメラの使用が拒否されています。ブラウザの設定で許可してください。";
+    } else if (e.name === "NotFoundError") {
+      msg = "カメラが見つかりません。";
+    } else if (e.name === "NotReadableError") {
+      msg = "カメラが他のアプリで使用中です。";
+    }
+
+    statusEl.textContent = "カメラエラー: " + msg;
+    alert("カメラを起動できませんでした\n\n" + msg);
   }
 }
 
@@ -357,13 +360,32 @@ function changeOverlay() {
   const selected = overlays[index];
   syncImageCompleteCheck();
 
+  overlay.onload = null;
+  overlay.onerror = null;
+  overlay.src = "";
+  overlay.style.display = "none";
+
   if (selected.src) {
-    overlay.crossOrigin = "anonymous";
+    // 表示を安定させるため crossOrigin は付けない
+    overlay.removeAttribute("crossorigin");
+
+    overlay.onload = function() {
+      overlay.style.display = "block";
+      updateOpacity(document.getElementById("opacitySlider").value);
+      statusEl.textContent = "オーバーレイ表示中: " + selected.name +
+        " (" + overlay.naturalWidth + "×" + overlay.naturalHeight + ")";
+    };
+
+    overlay.onerror = function() {
+      overlay.style.display = "none";
+      statusEl.textContent = "画像の読み込みに失敗: " + selected.name;
+      console.warn("オーバーレイ読み込み失敗", selected.src);
+    };
+
     overlay.src = selected.src;
-    overlay.style.display = "block";
-    updateOpacity(document.getElementById("opacitySlider").value);
   } else {
     overlay.style.display = "none";
+    statusEl.textContent = "オーバーレイなし";
   }
 }
 
@@ -373,7 +395,6 @@ function updateOpacity(value) {
   document.getElementById("opacityValue").textContent = value + "%";
 }
 
-// 画像を canvas に contain で描画（非16:9対応）
 function drawImageContain(ctx, img, canvasWidth, canvasHeight) {
   if (!img.naturalWidth || !img.naturalHeight) return;
 
@@ -407,11 +428,9 @@ function shoot() {
   canvas.height = video.videoHeight || 720;
   const ctx = canvas.getContext("2d");
 
-  // カメラ映像は全面描画
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // オーバーレイは contain で中央配置
-  if (overlay.style.display !== "none" && overlay.src && overlay.complete) {
+  if (overlay.style.display !== "none" && overlay.src && overlay.complete && overlay.naturalWidth > 0) {
     ctx.globalAlpha = currentOpacity;
     try {
       drawImageContain(ctx, overlay, canvas.width, canvas.height);
@@ -421,7 +440,6 @@ function shoot() {
     ctx.globalAlpha = 1;
   }
 
-  // 合成結果を一時表示
   canvas.style.display = "block";
   video.style.display = "none";
   overlay.style.display = "none";
@@ -431,7 +449,6 @@ function shoot() {
   a.href = canvas.toDataURL("image/png");
   a.click();
 
-  // 約1秒後にカメラへ戻す
   setTimeout(function() {
     canvas.style.display = "none";
     video.style.display = "block";
