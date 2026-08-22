@@ -285,49 +285,25 @@ async function startCamera() {
       throw new Error("このブラウザはカメラに対応していません");
     }
 
-    // 既存のストリームを停止
+    // 既存ストリームを停止
     if (stream) {
-      stream.getTracks().forEach(function(t) { t.stop(); });
+      stream.getTracks().forEach(t => t.stop());
       stream = null;
     }
 
-    // 制約を「基本 → 中 → 高」の順に変更（安定優先）
+    statusEl.textContent = "カメラ起動中...";
+
+    // 最も安定しやすいシンプルな設定から試す
     const constraintsList = [
-      // 1. 最も安定しやすい基本設定
-      {
-        video: {
-          facingMode: { ideal: "environment" }
-        }
-      },
-      // 2. 720p
-      {
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      },
-      // 3. 1080p
-      {
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
-      },
-      // 4. 最後の手段
-      {
-        video: true
-      }
+      { video: { facingMode: "environment" } },
+      { video: { facingMode: { ideal: "environment" } } },
+      { video: true }
     ];
 
     let lastError = null;
-    stream = null;
-
-    for (let i = 0; i < constraintsList.length; i++) {
+    for (const constraints of constraintsList) {
       try {
-        console.log("カメラ試行中:", constraintsList[i]);
-        stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
         break;
       } catch (e) {
         lastError = e;
@@ -339,49 +315,39 @@ async function startCamera() {
       throw lastError || new Error("カメラを取得できませんでした");
     }
 
-    // ビデオ要素の設定を強化
+    // ビデオ要素の設定
     video.srcObject = stream;
     video.muted = true;
     video.playsInline = true;
-    video.setAttribute("playsinline", "true");
-    video.setAttribute("webkit-playsinline", "true");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.style.display = "block";
 
-    // ★重要：明示的に再生する
-    try {
-      await video.play();
-      console.log("video.play() 成功");
-    } catch (playErr) {
-      console.warn("自動再生失敗（タップで再生される場合があります）:", playErr);
-      statusEl.textContent = "カメラの再生にタップが必要な場合があります";
-    }
+    // 再生を試みる
+    await video.play();
 
-    // 実際の解像度を表示
-    video.onloadedmetadata = function() {
-      const track = stream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      const w = settings.width || video.videoWidth || 0;
-      const h = settings.height || video.videoHeight || 0;
-      console.log("カメラ設定:", settings);
-
-      statusEl.textContent = "カメラ解像度: " + w + "×" + h;
-    };
-
-    statusEl.textContent = "カメラ起動成功";
+    // 解像度表示
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    const w = settings.width || video.videoWidth || "?";
+    const h = settings.height || video.videoHeight || "?";
+    statusEl.textContent = `カメラ起動成功 (${w}×${h})`;
+    console.log("カメラ成功:", settings);
 
   } catch (e) {
-    console.error("カメラエラー詳細:", e);
+    console.error("カメラエラー:", e);
     let msg = e.message || e.name || String(e);
 
     if (e.name === "NotAllowedError") {
-      msg = "カメラの使用が許可されていません。ブラウザの設定で許可してください。";
+      msg = "カメラの使用が拒否されています。ブラウザの設定で許可してください。";
     } else if (e.name === "NotFoundError") {
       msg = "カメラが見つかりません。";
     } else if (e.name === "NotReadableError") {
-      msg = "カメラが他のアプリで使用中です。";
+      msg = "カメラが他のアプリで使用中です。アプリを閉じて再試行してください。";
     }
 
-    alert("カメラを起動できませんでした\n\n" + msg);
     statusEl.textContent = "カメラエラー: " + msg;
+    alert("カメラを起動できませんでした\n\n" + msg);
   }
 }
 
