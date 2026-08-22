@@ -5,45 +5,62 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>カメラ + Dropbox</title>
   <style>
-    body {
+    * { box-sizing: border-box; }
+
+    html, body {
       margin: 0;
       padding: 0;
+      width: 100%;
+      height: 100%;
       background: #000;
       font-family: sans-serif;
       color: white;
+      overflow: hidden;
+    }
+
+    .app {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100dvh;
     }
 
     .controls {
-      padding: 10px;
-      background: rgba(0,0,0,0.85);
+      padding: 8px 10px;
+      background: rgba(0,0,0,0.9);
       text-align: center;
+      flex-shrink: 0;
+      max-height: 42vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     button, select {
-      margin: 5px;
+      margin: 4px;
       padding: 8px 12px;
-      font-size: 16px;
+      font-size: 15px;
     }
 
     #folderSelect, #overlaySelect {
       max-width: 95%;
-      min-width: 260px;
+      min-width: 200px;
     }
 
-    .slider-container { margin: 10px 0; }
+    .slider-container { margin: 6px 0; }
 
-    .row { margin: 8px 0; }
+    .row { margin: 6px 0; }
     .row label.title {
       display: inline-block;
-      width: 90px;
+      width: 84px;
+      font-size: 14px;
     }
 
     .check-label {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      margin: 6px 8px;
-      font-size: 15px;
+      gap: 6px;
+      margin: 4px 6px;
+      font-size: 14px;
       cursor: pointer;
       user-select: none;
     }
@@ -54,18 +71,17 @@
     }
 
     #status {
-      font-size: 13px;
+      font-size: 12px;
       color: #ccc;
-      margin-top: 8px;
+      margin-top: 6px;
       word-break: break-all;
     }
 
     .container {
       position: relative;
       width: 100%;
-      max-width: 100%;
-      aspect-ratio: 16 / 9;
-      margin: 0 auto;
+      flex: 1;
+      min-height: 0;
       background: #111;
       overflow: hidden;
     }
@@ -86,53 +102,138 @@
     }
 
     canvas { z-index: 20; }
+
+    /* 横向き: 左=カメラ / 右=操作 */
+    @media (orientation: landscape) {
+      .app {
+        flex-direction: row-reverse;
+        height: 100dvh;
+      }
+
+      .controls {
+        width: min(34vw, 320px);
+        max-width: 340px;
+        max-height: none;
+        height: 100dvh;
+        overflow-y: auto;
+        text-align: left;
+        padding: 10px;
+        border-left: 1px solid #333;
+        border-right: none;
+      }
+
+      .controls button,
+      .controls select {
+        display: block;
+        width: calc(100% - 8px);
+        margin: 6px 0;
+      }
+
+      .controls .row {
+        margin: 8px 0;
+      }
+
+      .controls .row label.title {
+        display: block;
+        width: auto;
+        margin-bottom: 4px;
+        font-size: 13px;
+        color: #aaa;
+      }
+
+      #folderSelect, #overlaySelect {
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+      }
+
+      .check-label {
+        display: flex;
+        margin: 8px 0;
+      }
+
+      .slider-container {
+        margin: 10px 0;
+      }
+
+      .slider-container input[type="range"] {
+        width: 70%;
+        vertical-align: middle;
+      }
+
+      .container {
+        flex: 1;
+        height: 100dvh;
+        width: auto;
+      }
+    }
+
+    @media (orientation: landscape) and (max-height: 500px) {
+      .controls {
+        width: min(38vw, 300px);
+        padding: 6px 8px;
+        font-size: 13px;
+      }
+
+      button, select {
+        padding: 6px 8px;
+        font-size: 13px;
+        margin: 4px 0;
+      }
+
+      .check-label {
+        font-size: 13px;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="controls">
-    <button onclick="shoot()">撮影</button>
-    <button onclick="initDropbox()">再読み込み</button>
+  <div class="app">
+    <div class="controls">
+      <button onclick="shoot()">撮影</button>
+      <button onclick="initDropbox()">再読み込み</button>
 
-    <hr>
+      <hr style="border-color:#333;">
 
-    <div class="row">
-      <label class="title">フォルダ:</label>
-      <select id="folderSelect" onchange="onFolderChange()">
-        <option value="">読み込み中...</option>
-      </select>
+      <div class="row">
+        <label class="title">フォルダ:</label>
+        <select id="folderSelect" onchange="onFolderChange()">
+          <option value="">読み込み中...</option>
+        </select>
+      </div>
+
+      <label class="check-label">
+        <input type="checkbox" id="folderCompleteCheck" onchange="toggleFolderComplete()">
+        このフォルダを完了済みにする
+      </label>
+
+      <div class="row">
+        <label class="title">オーバーレイ:</label>
+        <select id="overlaySelect" onchange="changeOverlay()">
+          <option value="">フォルダを選択</option>
+        </select>
+      </div>
+
+      <label class="check-label">
+        <input type="checkbox" id="imageCompleteCheck" onchange="toggleImageComplete()">
+        この画像を完了済みにする
+      </label>
+
+      <div class="slider-container">
+        <label class="title">透明度:</label>
+        <input type="range" id="opacitySlider" min="0" max="100" value="50"
+               oninput="updateOpacity(this.value)">
+        <span id="opacityValue">50%</span>
+      </div>
+
+      <div id="status">準備中...</div>
     </div>
 
-    <label class="check-label">
-      <input type="checkbox" id="folderCompleteCheck" onchange="toggleFolderComplete()">
-      このフォルダを完了済みにする
-    </label>
-
-    <div class="row">
-      <label class="title">オーバーレイ:</label>
-      <select id="overlaySelect" onchange="changeOverlay()">
-        <option value="">フォルダを選択</option>
-      </select>
+    <div class="container">
+      <video id="camera" autoplay muted playsinline></video>
+      <img id="overlay" alt="overlay" crossorigin="anonymous">
+      <canvas id="canvas" style="display:none;"></canvas>
     </div>
-
-    <label class="check-label">
-      <input type="checkbox" id="imageCompleteCheck" onchange="toggleImageComplete()">
-      この画像を完了済みにする
-    </label>
-
-    <div class="slider-container">
-      <label class="title">透明度:</label>
-      <input type="range" id="opacitySlider" min="0" max="100" value="50"
-             oninput="updateOpacity(this.value)">
-      <span id="opacityValue">50%</span>
-    </div>
-
-    <div id="status">準備中...</div>
-  </div>
-
-  <div class="container">
-    <video id="camera" autoplay muted playsinline></video>
-    <img id="overlay" alt="overlay" crossorigin="anonymous">
-    <canvas id="canvas" style="display:none;"></canvas>
   </div>
 
   <script>
@@ -158,7 +259,6 @@
     const imageCompleteCheck = document.getElementById("imageCompleteCheck");
     const statusEl = document.getElementById("status");
 
-    // ---- localStorage ヘルパー ----
     function loadList(key) {
       try {
         return JSON.parse(localStorage.getItem(key) || "[]");
@@ -180,7 +280,6 @@
       return loadList(IMAGE_STORAGE_KEY).indexOf(path) !== -1;
     }
 
-    // ---- Dropbox API ----
     async function dropboxApi(endpoint, body) {
       const res = await fetch("https://api.dropboxapi.com/2/" + endpoint, {
         method: "POST",
@@ -191,7 +290,9 @@
         body: JSON.stringify(body)
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(data, null, 2));
+      if (!res.ok) {
+        throw new Error(JSON.stringify(data, null, 2));
+      }
       return data;
     }
 
@@ -215,13 +316,14 @@
     function getDepth(path) {
       const root = FOLDER_PATH.replace(/\/$/, "").toLowerCase();
       let rel = path.toLowerCase();
-      if (rel.indexOf(root) === 0) rel = rel.slice(root.length);
+      if (rel.indexOf(root) === 0) {
+        rel = rel.slice(root.length);
+      }
       rel = rel.replace(/^\//, "");
       if (!rel) return 0;
       return rel.split("/").filter(Boolean).length;
     }
 
-    // ---- フォルダ完了 ----
     function toggleFolderComplete() {
       const path = folderSelect.value;
       if (!path) return;
@@ -239,7 +341,6 @@
         : "フォルダの完了を解除しました";
     }
 
-    // ---- 画像完了 ----
     function toggleImageComplete() {
       const index = parseInt(overlaySelect.value);
       if (isNaN(index) || !overlays[index] || !overlays[index].path) {
@@ -263,7 +364,6 @@
         : "画像の完了を解除しました: " + overlays[index].name;
     }
 
-    // ---- 表示更新 ----
     function renderFolderSelect(selectedPath) {
       folderSelect.innerHTML = "";
       folderList.forEach(function(folder) {
@@ -284,20 +384,17 @@
         const item = overlays[i];
         const option = document.createElement("option");
         option.value = i;
-
         if (!item.path) {
-          option.textContent = item.name; // 「なし」
+          option.textContent = item.name;
         } else {
           const mark = isImageCompleted(item.path) ? "✅ " : "🖼️ ";
           option.textContent = mark + item.name;
         }
         overlaySelect.appendChild(option);
       }
-
       if (typeof selectedIndex === "number" && !isNaN(selectedIndex)) {
         overlaySelect.value = String(selectedIndex);
       }
-
       syncImageCompleteCheck();
     }
 
@@ -316,7 +413,6 @@
       renderOverlaySelect(0);
     }
 
-    // ---- Dropbox読み込み ----
     async function initDropbox() {
       statusEl.textContent = "フォルダツリーを読み込み中...";
       folderSelect.innerHTML = "";
@@ -329,12 +425,19 @@
 
       try {
         const entries = await listAllEntries(FOLDER_PATH, true);
-        const folders = entries.filter(function(e) { return e[".tag"] === "folder"; });
+        const folders = entries.filter(function(e) {
+          return e[".tag"] === "folder";
+        });
         folders.sort(function(a, b) {
           return a.path_lower.localeCompare(b.path_lower);
         });
 
-        folderList.push({ path: FOLDER_PATH, name: "（ルート）", depth: 0 });
+        folderList.push({
+          path: FOLDER_PATH,
+          name: "（ルート）",
+          depth: 0
+        });
+
         folders.forEach(function(folder) {
           folderList.push({
             path: folder.path_lower,
@@ -389,7 +492,7 @@
             overlays.push({
               name: file.name,
               src: linkData.link,
-              path: file.path_lower  // 完了管理用の一意キー
+              path: file.path_lower
             });
           }
         }
@@ -403,10 +506,11 @@
       }
     }
 
-    // ---- カメラ・撮影 ----
     async function startCamera() {
       try {
-        if (stream) stream.getTracks().forEach(function(t) { t.stop(); });
+        if (stream) {
+          stream.getTracks().forEach(function(t) { t.stop(); });
+        }
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "environment",
@@ -453,6 +557,7 @@
       canvas.width = video.videoWidth || 1280;
       canvas.height = video.videoHeight || 720;
       const ctx = canvas.getContext("2d");
+
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       if (overlay.style.display !== "none" && overlay.src) {
@@ -474,6 +579,12 @@
       a.href = canvas.toDataURL("image/png");
       a.click();
     }
+
+    window.addEventListener("orientationchange", function() {
+      setTimeout(function() {
+        window.scrollTo(0, 0);
+      }, 100);
+    });
 
     window.onload = function() {
       startCamera();
