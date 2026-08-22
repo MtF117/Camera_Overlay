@@ -1,1 +1,196 @@
+* {
+  box-sizing: border-box;
+}
 
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  font-family: sans-serif;
+  color: white;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+}
+
+.controls {
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.9);
+  text-align: center;
+  flex-shrink: 0;
+  max-height: 42vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+button, select {
+  margin: 4px;
+  padding: 8px 12px;
+  font-size: 15px;
+}
+
+#folderSelect, #overlaySelect {
+  max-width: 95%;
+  min-width: 200px;
+}
+
+.slider-container {
+  margin: 6px 0;
+}
+
+.row {
+  margin: 6px 0;
+}
+
+.row label.title {
+  display: inline-block;
+  width: 84px;
+  font-size: 14px;
+}
+
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 6px;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.check-label input {
+  width: 18px;
+  height: 18px;
+}
+
+#status {
+  font-size: 12px;
+  color: #ccc;
+  margin-top: 6px;
+  word-break: break-all;
+}
+
+.container {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  background: #111;
+  overflow: hidden;
+}
+
+video, canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+#overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 16:9以外でも画像全体を中央表示 */
+  pointer-events: none;
+  z-index: 10;
+  display: block;
+}
+
+canvas {
+  z-index: 20;
+}
+
+/* 横向き: 左=カメラ / 右=操作 */
+@media (orientation: landscape) {
+  .app {
+    flex-direction: row-reverse;
+    height: 100dvh;
+  }
+
+  .controls {
+    width: min(34vw, 320px);
+    max-width: 340px;
+    max-height: none;
+    height: 100dvh;
+    overflow-y: auto;
+    text-align: left;
+    padding: 10px;
+    border-left: 1px solid #333;
+    border-right: none;
+  }
+
+  .controls button,
+  .controls select {
+    display: block;
+    width: calc(100% - 8px);
+    margin: 6px 0;
+  }
+
+  .controls .row {
+    margin: 8px 0;
+  }
+
+  .controls .row label.title {
+    display: block;
+    width: auto;
+    margin-bottom: 4px;
+    font-size: 13px;
+    color: #aaa;
+  }
+
+  #folderSelect, #overlaySelect {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .check-label {
+    display: flex;
+    margin: 8px 0;
+  }
+
+  .slider-container {
+    margin: 10px 0;
+  }
+
+  .slider-container input[type="range"] {
+    width: 70%;
+    vertical-align: middle;
+  }
+
+  .container {
+    flex: 1;
+    height: 100dvh;
+    width: auto;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .controls {
+    width: min(38vw, 300px);
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  button, select {
+    padding: 6px 8px;
+    font-size: 13px;
+    margin: 4px 0;
+  }
+
+  .check-label {
+    font-size: 13px;
+  }
+}
