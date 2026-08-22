@@ -92,9 +92,15 @@ function toggleFolderComplete() {
   }
   saveList(FOLDER_STORAGE_KEY, list);
   renderFolderSelect(path);
-  statusEl.textContent = folderCompleteCheck.checked
-    ? "フォルダを完了済みにしました"
-    : "フォルダの完了を解除しました";
+// 成功時の部分を置き換え
+statusEl.textContent = "成功！ " + (overlays.length - 1) + " 枚の画像を読み込みました";
+
+// 「なし」ではなく最初の画像を自動選択
+if (overlays.length > 1) {
+  renderOverlaySelect(1);          // 1番目の画像を選択
+  changeOverlay();                 // すぐに表示
+} else {
+  initOverlaySelect();
 }
 
 function toggleImageComplete() {
@@ -386,13 +392,34 @@ function changeOverlay() {
   const selected = overlays[index];
   syncImageCompleteCheck();
 
+  // いったんリセット
+  overlay.onload = null;
+  overlay.onerror = null;
+  overlay.src = "";
+  overlay.style.display = "none";
+
   if (selected.src) {
-    overlay.crossOrigin = "anonymous";
+    // 表示用には crossOrigin を外した方が安定する場合が多い
+    overlay.removeAttribute("crossorigin");
+
+    overlay.onload = function() {
+      overlay.style.display = "block";
+      updateOpacity(document.getElementById("opacitySlider").value);
+      statusEl.textContent = "オーバーレイ表示中: " + selected.name +
+        " (" + overlay.naturalWidth + "×" + overlay.naturalHeight + ")";
+      console.log("オーバーレイ読み込み成功:", selected.name);
+    };
+
+    overlay.onerror = function() {
+      overlay.style.display = "none";
+      statusEl.textContent = "オーバーレイ画像の読み込みに失敗: " + selected.name;
+      console.warn("オーバーレイ画像読み込み失敗:", selected.src);
+    };
+
     overlay.src = selected.src;
-    overlay.style.display = "block";
-    updateOpacity(document.getElementById("opacitySlider").value);
   } else {
     overlay.style.display = "none";
+    statusEl.textContent = "オーバーレイなし";
   }
 }
 
@@ -439,17 +466,18 @@ function shoot() {
   // カメラ映像は全面描画
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // オーバーレイは contain で中央配置
-  if (overlay.style.display !== "none" && overlay.src && overlay.complete) {
-    ctx.globalAlpha = currentOpacity;
-    try {
-      drawImageContain(ctx, overlay, canvas.width, canvas.height);
-    } catch (e) {
-      console.warn("合成失敗", e);
-    }
-    ctx.globalAlpha = 1;
+// オーバーレイは contain で中央配置
+if (overlay.style.display !== "none" && overlay.src && overlay.complete && overlay.naturalWidth > 0) {
+  ctx.globalAlpha = currentOpacity;
+  try {
+    // 合成用に一時的に crossOrigin を設定して再読み込みはせず、そのまま描画を試みる
+    drawImageContain(ctx, overlay, canvas.width, canvas.height);
+  } catch (e) {
+    console.warn("合成失敗（CORSの可能性）", e);
+    statusEl.textContent = "合成に失敗しました（CORS）。表示のみ可能です。";
   }
-
+  ctx.globalAlpha = 1;
+}
   // 合成結果を一時表示
   canvas.style.display = "block";
   video.style.display = "none";
