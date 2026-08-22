@@ -476,6 +476,7 @@ window.addEventListener("orientationchange", function() {
 });
 
 window.onload = function() {
-  startCamera();
+  // startCamera();  ← これをコメントアウトまたは削除
   initDropbox();
+  statusEl.textContent = "「カメラを起動」ボタンを押してください";
 };
