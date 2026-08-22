@@ -1,3 +1,8 @@
+// ★★★ ここだけ書き換えてください ★★★
+const ACCESS_TOKEN = "ここにアクセストークンを貼る";
+const FOLDER_PATH = "/Overlays";
+// ★★★★★★★★★★★★★★★★★★★★★★
+
 const FOLDER_STORAGE_KEY = "dropbox_completed_folders";
 const IMAGE_STORAGE_KEY = "dropbox_completed_images";
 
@@ -92,15 +97,9 @@ function toggleFolderComplete() {
   }
   saveList(FOLDER_STORAGE_KEY, list);
   renderFolderSelect(path);
-// 成功時の部分を置き換え
-statusEl.textContent = "成功！ " + (overlays.length - 1) + " 枚の画像を読み込みました";
-
-// 「なし」ではなく最初の画像を自動選択
-if (overlays.length > 1) {
-  renderOverlaySelect(1);          // 1番目の画像を選択
-  changeOverlay();                 // すぐに表示
-} else {
-  initOverlaySelect();
+  statusEl.textContent = folderCompleteCheck.checked
+    ? "フォルダを完了済みにしました"
+    : "フォルダの完了を解除しました";
 }
 
 function toggleImageComplete() {
@@ -278,36 +277,48 @@ async function loadImagesFromPath(path) {
   }
 }
 
-// カメラ解像度最適化 + 確実に映るように改善
+// カメラ解像度最適化（高解像度優先でフォールバック）
 async function startCamera() {
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("このブラウザはカメラに対応していません");
-    }
-
-    // 既存ストリームを停止
     if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
+      stream.getTracks().forEach(function(t) { t.stop(); });
     }
 
-    statusEl.textContent = "カメラ起動中...";
-
-    // 最も安定しやすいシンプルな設定から試す
     const constraintsList = [
-      { video: { facingMode: "environment" } },
-      { video: { facingMode: { ideal: "environment" } } },
-      { video: true }
+      {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      },
+      {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      },
+      {
+        video: {
+          facingMode: { ideal: "environment" }
+        }
+      },
+      {
+        video: true
+      }
     ];
 
     let lastError = null;
-    for (const constraints of constraintsList) {
+    stream = null;
+
+    for (let i = 0; i < constraintsList.length; i++) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
         break;
       } catch (e) {
         lastError = e;
-        console.warn("カメラ制約失敗:", e.name, e.message);
+        console.warn("カメラ制約失敗、次を試します:", constraintsList[i], e);
       }
     }
 
@@ -315,39 +326,27 @@ async function startCamera() {
       throw lastError || new Error("カメラを取得できませんでした");
     }
 
-    // ビデオ要素の設定
     video.srcObject = stream;
-    video.muted = true;
-    video.playsInline = true;
-    video.setAttribute("playsinline", "");
-    video.setAttribute("webkit-playsinline", "");
-    video.style.display = "block";
 
-    // 再生を試みる
-    await video.play();
+    video.onloadedmetadata = function() {
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      const w = settings.width || video.videoWidth || 0;
+      const h = settings.height || video.videoHeight || 0;
+      console.log("カメラ設定:", settings);
 
-    // 解像度表示
-    const track = stream.getVideoTracks()[0];
-    const settings = track.getSettings();
-    const w = settings.width || video.videoWidth || "?";
-    const h = settings.height || video.videoHeight || "?";
-    statusEl.textContent = `カメラ起動成功 (${w}×${h})`;
-    console.log("カメラ成功:", settings);
-
+      const prevStatus = statusEl.textContent;
+      statusEl.textContent = "カメラ解像度: " + w + "×" + h;
+      setTimeout(function() {
+        if (statusEl.textContent.indexOf("カメラ解像度") === 0) {
+          statusEl.textContent = prevStatus;
+        }
+      }, 3000);
+    };
   } catch (e) {
-    console.error("カメラエラー:", e);
-    let msg = e.message || e.name || String(e);
-
-    if (e.name === "NotAllowedError") {
-      msg = "カメラの使用が拒否されています。ブラウザの設定で許可してください。";
-    } else if (e.name === "NotFoundError") {
-      msg = "カメラが見つかりません。";
-    } else if (e.name === "NotReadableError") {
-      msg = "カメラが他のアプリで使用中です。アプリを閉じて再試行してください。";
-    }
-
-    statusEl.textContent = "カメラエラー: " + msg;
-    alert("カメラを起動できませんでした\n\n" + msg);
+    alert("カメラを起動できませんでした\n\n" + (e.message || e));
+    console.error(e);
+    statusEl.textContent = "カメラエラー: " + (e.message || e);
   }
 }
 
@@ -358,34 +357,13 @@ function changeOverlay() {
   const selected = overlays[index];
   syncImageCompleteCheck();
 
-  // いったんリセット
-  overlay.onload = null;
-  overlay.onerror = null;
-  overlay.src = "";
-  overlay.style.display = "none";
-
   if (selected.src) {
-    // 表示用には crossOrigin を外した方が安定する場合が多い
-    overlay.removeAttribute("crossorigin");
-
-    overlay.onload = function() {
-      overlay.style.display = "block";
-      updateOpacity(document.getElementById("opacitySlider").value);
-      statusEl.textContent = "オーバーレイ表示中: " + selected.name +
-        " (" + overlay.naturalWidth + "×" + overlay.naturalHeight + ")";
-      console.log("オーバーレイ読み込み成功:", selected.name);
-    };
-
-    overlay.onerror = function() {
-      overlay.style.display = "none";
-      statusEl.textContent = "オーバーレイ画像の読み込みに失敗: " + selected.name;
-      console.warn("オーバーレイ画像読み込み失敗:", selected.src);
-    };
-
+    overlay.crossOrigin = "anonymous";
     overlay.src = selected.src;
+    overlay.style.display = "block";
+    updateOpacity(document.getElementById("opacitySlider").value);
   } else {
     overlay.style.display = "none";
-    statusEl.textContent = "オーバーレイなし";
   }
 }
 
@@ -432,18 +410,17 @@ function shoot() {
   // カメラ映像は全面描画
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-// オーバーレイは contain で中央配置
-if (overlay.style.display !== "none" && overlay.src && overlay.complete && overlay.naturalWidth > 0) {
-  ctx.globalAlpha = currentOpacity;
-  try {
-    // 合成用に一時的に crossOrigin を設定して再読み込みはせず、そのまま描画を試みる
-    drawImageContain(ctx, overlay, canvas.width, canvas.height);
-  } catch (e) {
-    console.warn("合成失敗（CORSの可能性）", e);
-    statusEl.textContent = "合成に失敗しました（CORS）。表示のみ可能です。";
+  // オーバーレイは contain で中央配置
+  if (overlay.style.display !== "none" && overlay.src && overlay.complete) {
+    ctx.globalAlpha = currentOpacity;
+    try {
+      drawImageContain(ctx, overlay, canvas.width, canvas.height);
+    } catch (e) {
+      console.warn("合成失敗", e);
+    }
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
-}
+
   // 合成結果を一時表示
   canvas.style.display = "block";
   video.style.display = "none";
