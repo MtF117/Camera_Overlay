@@ -283,13 +283,14 @@ async function loadImagesFromPath(path) {
   }
 }
 
-// ★ カメラ起動（安定重視版）
+// 高解像度の制約を一切無し（最も安定しやすい設定）
 async function startCamera() {
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error("このブラウザはカメラに対応していません");
     }
 
+    // 既存のストリームを停止
     if (stream) {
       stream.getTracks().forEach(function(t) { t.stop(); });
       stream = null;
@@ -297,21 +298,28 @@ async function startCamera() {
 
     statusEl.textContent = "カメラ起動中...";
 
-    // 安定しやすい順に試す
-    const constraintsList = [
-      { video: { facingMode: "environment" } },
-      { video: { facingMode: { ideal: "environment" } } },
-      { video: true }
-    ];
-
     let lastError = null;
-    for (let i = 0; i < constraintsList.length; i++) {
+
+    // 1. リアカメラ優先（解像度指定なし）
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+    } catch (e) {
+      lastError = e;
+      console.warn("リアカメラ失敗、次を試します:", e.name);
+    }
+
+    // 2. それでもダメなら完全にシンプル
+    if (!stream) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
-        break;
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
       } catch (e) {
         lastError = e;
-        console.warn("カメラ制約失敗:", e.name, e.message);
       }
     }
 
@@ -319,6 +327,7 @@ async function startCamera() {
       throw lastError || new Error("カメラを取得できませんでした");
     }
 
+    // ビデオ要素の設定
     video.srcObject = stream;
     video.muted = true;
     video.playsInline = true;
@@ -326,9 +335,10 @@ async function startCamera() {
     video.setAttribute("webkit-playsinline", "");
     video.style.display = "block";
 
-    // ★ これが無いとスマホで黒画面になりやすい
+    // 再生（これがないと黒画面になりやすい）
     await video.play();
 
+    // 実際の解像度を表示
     const track = stream.getVideoTracks()[0];
     const settings = track.getSettings();
     const w = settings.width || video.videoWidth || "?";
@@ -352,7 +362,6 @@ async function startCamera() {
     alert("カメラを起動できませんでした\n\n" + msg);
   }
 }
-
 function changeOverlay() {
   const index = parseInt(overlaySelect.value);
   if (isNaN(index) || !overlays[index]) return;
