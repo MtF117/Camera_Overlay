@@ -272,21 +272,28 @@ async function loadImagesFromPath(path) {
   }
 }
 
-// カメラ解像度最適化（高解像度優先でフォールバック）
+// カメラ解像度最適化 + 確実に映るように改善
 async function startCamera() {
   try {
-    if (stream) {
-      stream.getTracks().forEach(function(t) { t.stop(); });
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("このブラウザはカメラに対応していません");
     }
 
+    // 既存のストリームを停止
+    if (stream) {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      stream = null;
+    }
+
+    // 制約を「基本 → 中 → 高」の順に変更（安定優先）
     const constraintsList = [
+      // 1. 最も安定しやすい基本設定
       {
         video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          facingMode: { ideal: "environment" }
         }
       },
+      // 2. 720p
       {
         video: {
           facingMode: { ideal: "environment" },
@@ -294,11 +301,15 @@ async function startCamera() {
           height: { ideal: 720 }
         }
       },
+      // 3. 1080p
       {
         video: {
-          facingMode: { ideal: "environment" }
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         }
       },
+      // 4. 最後の手段
       {
         video: true
       }
@@ -309,11 +320,12 @@ async function startCamera() {
 
     for (let i = 0; i < constraintsList.length; i++) {
       try {
+        console.log("カメラ試行中:", constraintsList[i]);
         stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
         break;
       } catch (e) {
         lastError = e;
-        console.warn("カメラ制約失敗、次を試します:", constraintsList[i], e);
+        console.warn("カメラ制約失敗:", e.name, e.message);
       }
     }
 
@@ -321,8 +333,23 @@ async function startCamera() {
       throw lastError || new Error("カメラを取得できませんでした");
     }
 
+    // ビデオ要素の設定を強化
     video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "true");
+    video.setAttribute("webkit-playsinline", "true");
 
+    // ★重要：明示的に再生する
+    try {
+      await video.play();
+      console.log("video.play() 成功");
+    } catch (playErr) {
+      console.warn("自動再生失敗（タップで再生される場合があります）:", playErr);
+      statusEl.textContent = "カメラの再生にタップが必要な場合があります";
+    }
+
+    // 実際の解像度を表示
     video.onloadedmetadata = function() {
       const track = stream.getVideoTracks()[0];
       const settings = track.getSettings();
@@ -330,18 +357,25 @@ async function startCamera() {
       const h = settings.height || video.videoHeight || 0;
       console.log("カメラ設定:", settings);
 
-      const prevStatus = statusEl.textContent;
       statusEl.textContent = "カメラ解像度: " + w + "×" + h;
-      setTimeout(function() {
-        if (statusEl.textContent.indexOf("カメラ解像度") === 0) {
-          statusEl.textContent = prevStatus;
-        }
-      }, 3000);
     };
+
+    statusEl.textContent = "カメラ起動成功";
+
   } catch (e) {
-    alert("カメラを起動できませんでした\n\n" + (e.message || e));
-    console.error(e);
-    statusEl.textContent = "カメラエラー: " + (e.message || e);
+    console.error("カメラエラー詳細:", e);
+    let msg = e.message || e.name || String(e);
+
+    if (e.name === "NotAllowedError") {
+      msg = "カメラの使用が許可されていません。ブラウザの設定で許可してください。";
+    } else if (e.name === "NotFoundError") {
+      msg = "カメラが見つかりません。";
+    } else if (e.name === "NotReadableError") {
+      msg = "カメラが他のアプリで使用中です。";
+    }
+
+    alert("カメラを起動できませんでした\n\n" + msg);
+    statusEl.textContent = "カメラエラー: " + msg;
   }
 }
 
