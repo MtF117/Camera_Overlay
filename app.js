@@ -1,8 +1,3 @@
-// ★★★ ここだけ書き換えてください ★★★
-const ACCESS_TOKEN = "ここにアクセストークンを貼る";
-const FOLDER_PATH = "/Overlays";
-// ★★★★★★★★★★★★★★★★★★★★★★
-
 const FOLDER_STORAGE_KEY = "dropbox_completed_folders";
 const IMAGE_STORAGE_KEY = "dropbox_completed_images";
 
