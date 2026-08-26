@@ -510,7 +510,7 @@ function saveConfig() {
   initDropbox();
 }
 window.onload = function() {
-  // startCamera();  ← これをコメントアウトまたは削除
-  initDropbox();
-  statusEl.textContent = "「カメラを起動」ボタンを押してください";
+  loadConfig();           // 保存済みの設定を読み込む
+  // startCamera();      // 自動起動しない（ボタンで起動）
+  statusEl.textContent = "トークンを入力して「設定を保存」→「カメラを起動」を押してください";
 };
