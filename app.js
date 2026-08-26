@@ -474,7 +474,41 @@ window.addEventListener("orientationchange", function() {
     window.scrollTo(0, 0);
   }, 100);
 });
+// 設定を読み込む
+function loadConfig() {
+  const savedToken = localStorage.getItem("dropbox_access_token") || "";
+  const savedPath = localStorage.getItem("dropbox_folder_path");
 
+  ACCESS_TOKEN = savedToken;
+  FOLDER_PATH = (savedPath !== null) ? savedPath : "/Overlays";
+
+  const tokenInput = document.getElementById("tokenInput");
+  const folderInput = document.getElementById("folderPathInput");
+
+  if (tokenInput) tokenInput.value = ACCESS_TOKEN;
+  if (folderInput) folderInput.value = FOLDER_PATH;
+}
+
+// 設定を保存する
+function saveConfig() {
+  const tokenInput = document.getElementById("tokenInput");
+  const folderInput = document.getElementById("folderPathInput");
+
+  ACCESS_TOKEN = (tokenInput.value || "").trim();
+  FOLDER_PATH = (folderInput.value || "").trim();
+
+  localStorage.setItem("dropbox_access_token", ACCESS_TOKEN);
+  localStorage.setItem("dropbox_folder_path", FOLDER_PATH);
+
+  if (!ACCESS_TOKEN) {
+    statusEl.textContent = "トークンが入力されていません";
+    alert("アクセストークンを入力してください");
+    return;
+  }
+
+  statusEl.textContent = "設定を保存しました。Dropboxを読み込みます...";
+  initDropbox();
+}
 window.onload = function() {
   // startCamera();  ← これをコメントアウトまたは削除
   initDropbox();
