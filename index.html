@@ -9,6 +9,23 @@
 <body>
   <div class="app">
     <div class="controls">
+<!-- 設定エリア -->
+<div class="row" style="margin-top: 8px;">
+  <label class="title">トークン:</label>
+  <input type="password" id="tokenInput" placeholder="Dropboxアクセストークン"
+         style="width: 95%; max-width: 320px; padding: 6px; font-size: 14px;">
+</div>
+
+<div class="row">
+  <label class="title">フォルダ:</label>
+  <input type="text" id="folderPathInput" placeholder="/Overlays または 空欄"
+         style="width: 95%; max-width: 320px; padding: 6px; font-size: 14px;">
+</div>
+
+<button onclick="saveConfig()">設定を保存</button>
+
+<hr style="border-color:#333;">
+
 <button onclick="startCamera()">カメラを起動</button>
 <button onclick="shoot()">撮影</button>
 <button onclick="initDropbox()">再読み込み</button>
