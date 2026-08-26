@@ -1,6 +1,8 @@
 const FOLDER_STORAGE_KEY = "dropbox_completed_folders";
 const IMAGE_STORAGE_KEY = "dropbox_completed_images";
 
+let ACCESS_TOKEN = "";
+let FOLDER_PATH = "/Overlays";
 let stream = null;
 let currentOpacity = 0.5;
 let overlays = [{ name: "なし", src: "", path: "" }];
